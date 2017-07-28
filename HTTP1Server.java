@@ -14,6 +14,7 @@ public class HTTP1Server implements Runnable {
 	private String command;
 	private String requestHeader;
 	private String[] headers;
+	private String[] tokens;
 
 	HTTP1Server (Socket csocket) {
 		this.csocket = csocket;
@@ -196,7 +197,7 @@ public class HTTP1Server implements Runnable {
 		if (clientInput == null)
 			return "HTTP/1.0 400 Bad Request";
 
-		String[] tokens = clientInput.split("\\s+");
+		tokens = clientInput.split("\\s+");
 
 		float versionNum;
 
@@ -292,7 +293,7 @@ public class HTTP1Server implements Runnable {
 				if (contentTypeIndex == -1 || !headers[contentTypeIndex].equals("Content-Type: application/x-www-form-urlencoded"))
 					return "HTTP/1.0 500 Internal Server Error";
 
-				response = "Headers and file valid, executing file.\r\n";
+				startPostProcess();
 
 
 			}
@@ -309,6 +310,64 @@ public class HTTP1Server implements Runnable {
 
 	}
 
+	private void startPostProcess() {
+
+		//Grab body and environment variables
+		//Start processbuilder
+		//Set environment variables
+		//Start process
+		//Capture results
+		//Return response
+
+		String body = "";
+		for (int i = 0; i < headers.length; i++) {
+			System.out.println("Line #" + i + ": " + headers[i]);
+		}
+
+
+		if (headers[headers.length-2].equals("")) {
+			try {
+				body = URLDecoder.decode(headers[headers.length-1], "UTF-8");
+				System.out.println("Decoded URL: " + body);
+			} catch (UnsupportedEncodingException e) {
+				System.out.println("Error decoding URL");
+			}
+		}
+
+		String cgiPath = "." + tokens[1];
+
+		//Environment variables
+		String contentLength = Integer.toString(body.length());
+		System.out.println("Content Length: " + contentLength);
+
+		try {
+
+		ProcessBuilder pb = new ProcessBuilder(cgiPath);
+		pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+		pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+		Map<String, String> env = pb.environment();
+
+		env.put("CONTENT_LENGTH", contentLength);
+		Process p = pb.start();
+
+		System.out.println("Process is running!");
+
+		OutputStream stdin = p.getOutputStream();
+		stdin.write(body.getBytes());
+		stdin.close();
+
+		//InputStream stdout = p.getInputStream();
+
+
+
+
+
+		} catch (IOException e) {
+			System.out.println("Error building and running process");
+		}
+
+	}
 
 
 	private int findHeaderIndex(String headerVal) {
