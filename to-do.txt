@@ -1,0 +1,19 @@
+1) Fix read so it takes multiple lines, not just two DONE
+2) Read RFC on POST
+3) Implement POST:
+	a) Is command POST? If not, return 400 Bad Request or 501 Not Implemented
+	b) Is the file a CGI file? If not, return 405 Method Not Allowed
+	c) Does the CGI script have execute permissions? If not, return 403 Forbidden
+	d) Check headers. Does Content-Type exist and is it x-www-form-urlencoded? If not, return 500 Internal Server Error.
+	e) Does Content-Length exist and is it a non-negative integer? If not, return 411 Length Required.
+	f) If command is POST, file exists, file is CGI, file has execute permissions, and header has valid content-type and content-length headers, then:
+
+		1) Grab the body of the request and decode it
+		2) Spawn a new process
+		3) Set CONTENT_LENGTH environment variable to length of decoded payload
+		4) Set other environmental variables as needed
+		5) Run CGI Script
+		6) Send environment variables to CGI script via STDIN
+		7) Redirect output of script via STDOUT to some response
+		8) If response is empty, return 204 No Content
+		9) Otherwise, return result of script as a text/html response
