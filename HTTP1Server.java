@@ -15,6 +15,7 @@ public class HTTP1Server implements Runnable {
 	private String requestHeader;
 	private String[] headers;
 	private String[] tokens;
+	private static int portNum;
 
 	HTTP1Server (Socket csocket) {
 		this.csocket = csocket;
@@ -37,7 +38,7 @@ public class HTTP1Server implements Runnable {
 			return;
 		}
 
-		int portNum = checkPortInput(args[0]);
+		portNum = checkPortInput(args[0]);
 		ServerSocket ssock;
 
 		//If port arg is not an integer, return error
@@ -234,7 +235,7 @@ public class HTTP1Server implements Runnable {
 
 		int modifiedIndex = -2;
 		//If If-Modified-Since header exists on a GET request, see if file has been modified since the requested date
-		if ((modifiedIndex = findHeaderIndex("If-Modified-Since")) != -1 && tokens[0].equals("GET")) {
+		if ((modifiedIndex = findHeaderIndex("If-Modified-Since")) >= 0 && tokens[0].equals("GET")) {
 		//if (header.contains("If-Modified-Since") && tokens[0].equals("GET")) {
 			String date = headers[modifiedIndex].substring(headers[modifiedIndex].indexOf(':') + 2);
 			System.out.println("\n\nModified Since String: " + date + "\n\n");
@@ -285,7 +286,7 @@ public class HTTP1Server implements Runnable {
 
 				contentLengthIndex = findHeaderIndex("Content-Length");
 
-				if (contentLengthIndex == -1 || checkPostContentLength(headers[contentLengthIndex].substring(headers[contentLengthIndex].indexOf(':') +2)) <0)
+				if (contentLengthIndex == -1 || checkPostContentLength(headers[contentLengthIndex].substring(headers[contentLengthIndex].indexOf(':') +2)) < 0)
 					return "HTTP/1.0 411 Length Required";
 
 				contentTypeIndex = findHeaderIndex("Content-Type");
@@ -293,8 +294,19 @@ public class HTTP1Server implements Runnable {
 				if (contentTypeIndex == -1 || !headers[contentTypeIndex].equals("Content-Type: application/x-www-form-urlencoded"))
 					return "HTTP/1.0 500 Internal Server Error";
 
-				startPostProcess();
+				String postResponse = startPostProcess();
+				int postLength = 0;
+				if (postResponse == null)
+					return "HTTP/1.0 204 No Content";
+				else if (postResponse != null)
+					postLength = postResponse.length();
 
+				response = "HTTP/1.0 200 OK" + '\r' + '\n' + "Content-Type: text/html" + '\r' + '\n' + "Content-Length: " + postLength + '\r' + '\n' +
+						"Content-Encoding: identity" + '\r' + '\n' + "Allow: GET, POST, HEAD" + '\r' + '\n' + "Expires: ";
+
+				Calendar now = Calendar.getInstance();
+				now.add(Calendar.HOUR, 24);
+				response+= sdf.format(now.getTime()) + '\r' + '\n' + '\r' + '\n' + postResponse;
 
 			}
 
@@ -310,7 +322,7 @@ public class HTTP1Server implements Runnable {
 
 	}
 
-	private void startPostProcess() {
+	private String startPostProcess() {
 
 		//Grab body and environment variables
 		//Start processbuilder
@@ -320,10 +332,7 @@ public class HTTP1Server implements Runnable {
 		//Return response
 
 		String body = "";
-		for (int i = 0; i < headers.length; i++) {
-			System.out.println("Line #" + i + ": " + headers[i]);
-		}
-
+		String result = "";
 
 		if (headers[headers.length-2].equals("")) {
 			try {
@@ -343,12 +352,34 @@ public class HTTP1Server implements Runnable {
 		try {
 
 		ProcessBuilder pb = new ProcessBuilder(cgiPath);
-		pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-		pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+		//pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+		//pb.redirectError(ProcessBuilder.Redirect.INHERIT);
 
 		Map<String, String> env = pb.environment();
 
 		env.put("CONTENT_LENGTH", contentLength);
+		env.put("SCRIPT_NAME", tokens[1]);
+
+		try {
+			env.put("SERVER_NAME", InetAddress.getLocalHost().getHostAddress());
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+
+		env.put("SERVER_PORT", Integer.toString(portNum));
+
+		int httpFromIndex = -2;
+		int httpUserAgentIndex = -2;
+
+		if ((httpFromIndex = findHeaderIndex("From:")) >= 0) {
+			env.put("HTTP_FROM", headers[httpFromIndex].substring(headers[httpFromIndex].indexOf(':') + 2));
+		}
+
+		if ((httpUserAgentIndex = findHeaderIndex("User-Agent:")) >= 0) {
+			env.put("HTTP_USER_AGENT", headers[httpUserAgentIndex].substring(headers[httpUserAgentIndex].indexOf(':') + 2));
+		}
+
+
 		Process p = pb.start();
 
 		System.out.println("Process is running!");
@@ -357,15 +388,22 @@ public class HTTP1Server implements Runnable {
 		stdin.write(body.getBytes());
 		stdin.close();
 
-		//InputStream stdout = p.getInputStream();
+		BufferedReader stdout = new BufferedReader(new InputStreamReader(p.getInputStream()));
 
+		result = stdout.readLine();
 
+		while (stdout.ready()) {
+			result+='\n' + stdout.readLine();
+		}
 
-
+		System.out.println("Response from CGI:\r\n" + result);
+		stdout.close();
 
 		} catch (IOException e) {
 			System.out.println("Error building and running process");
 		}
+
+		return result;
 
 	}
 
@@ -431,7 +469,7 @@ public class HTTP1Server implements Runnable {
 				outToClient.flush();
 
 				//If 200 OK and a GET or POST request, send the payload
-				if(response.contains("200 OK") && (command.contains("GET") || command.contains("POST")))
+				if(response.contains("200 OK") && (command.contains("GET")))
 					outToClient.write(fileBytes);
 
 
