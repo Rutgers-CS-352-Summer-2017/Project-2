@@ -260,6 +260,7 @@ public class HTTP1Server implements Runnable {
 		//4. Otherwise, try to open the file and send response.
 		try {
 
+			//If the command is GET or HEAD, generate a 200 OK and build the header normally
 			if (tokens[0].equals("GET") || tokens[0].equals("HEAD")) {
 				fileBytes = Files.readAllBytes(path);
 
@@ -273,11 +274,15 @@ public class HTTP1Server implements Runnable {
 				response+="\r\n";
 
 			}
+
+			//If the command is POST --
 			else if (tokens[0].equals("POST")) {
 
+				//Is the file of type cgi?
 				if(!(tokens[1].substring(tokens[1].indexOf('.')+1)).equals("cgi"))
 					return "HTTP/1.0 405 Method Not Allowed";
 
+				//Are there execute permissions?
 				if (!f.canExecute())
 					return "HTTP/1.0 403 Forbidden";
 
@@ -286,21 +291,27 @@ public class HTTP1Server implements Runnable {
 
 				contentLengthIndex = findHeaderIndex("Content-Length");
 
+				//Does the request contain a valid Content-Length header?
 				if (contentLengthIndex == -1 || checkPostContentLength(headers[contentLengthIndex].substring(headers[contentLengthIndex].indexOf(':') +2)) < 0)
 					return "HTTP/1.0 411 Length Required";
 
 				contentTypeIndex = findHeaderIndex("Content-Type");
 
+				//Does the request contain a valid Content-Type header?
 				if (contentTypeIndex == -1 || !headers[contentTypeIndex].equals("Content-Type: application/x-www-form-urlencoded"))
 					return "HTTP/1.0 500 Internal Server Error";
 
+
 				String postResponse = startPostProcess();
 				int postLength = 0;
+
+				//Does the response contain content?
 				if (postResponse == null)
 					return "HTTP/1.0 204 No Content";
 				else if (postResponse != null)
 					postLength = postResponse.length();
 
+				//If all of the above is true, build the header and include the response
 				response = "HTTP/1.0 200 OK" + '\r' + '\n' + "Content-Type: text/html" + '\r' + '\n' + "Content-Length: " + postLength + '\r' + '\n' +
 						"Content-Encoding: identity" + '\r' + '\n' + "Allow: GET, POST, HEAD" + '\r' + '\n' + "Expires: ";
 
@@ -322,22 +333,16 @@ public class HTTP1Server implements Runnable {
 
 	}
 
+	//Starts a process with environment variables and captures CGI response
 	private String startPostProcess() {
-
-		//Grab body and environment variables
-		//Start processbuilder
-		//Set environment variables
-		//Start process
-		//Capture results
-		//Return response
 
 		String body = "";
 		String result = "";
 
+		//Decodes POST body
 		if (headers[headers.length-2].equals("")) {
 			try {
 				body = URLDecoder.decode(headers[headers.length-1], "UTF-8");
-				System.out.println("Decoded URL: " + body);
 			} catch (UnsupportedEncodingException e) {
 				System.out.println("Error decoding URL");
 			}
@@ -345,15 +350,12 @@ public class HTTP1Server implements Runnable {
 
 		String cgiPath = "." + tokens[1];
 
-		//Environment variables
 		String contentLength = Integer.toString(body.length());
-		System.out.println("Content Length: " + contentLength);
 
 		try {
 
+		//Builds process with necessary environment variables
 		ProcessBuilder pb = new ProcessBuilder(cgiPath);
-		//pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-		//pb.redirectError(ProcessBuilder.Redirect.INHERIT);
 
 		Map<String, String> env = pb.environment();
 
@@ -379,10 +381,8 @@ public class HTTP1Server implements Runnable {
 			env.put("HTTP_USER_AGENT", headers[httpUserAgentIndex].substring(headers[httpUserAgentIndex].indexOf(':') + 2));
 		}
 
-
+		//Starts process, passes POST body, and intercepts response
 		Process p = pb.start();
-
-		System.out.println("Process is running!");
 
 		OutputStream stdin = p.getOutputStream();
 		stdin.write(body.getBytes());
@@ -396,8 +396,9 @@ public class HTTP1Server implements Runnable {
 			result+='\n' + stdout.readLine();
 		}
 
-		System.out.println("Response from CGI:\r\n" + result);
 		stdout.close();
+		p.destroy();
+
 
 		} catch (IOException e) {
 			System.out.println("Error building and running process");
@@ -408,6 +409,7 @@ public class HTTP1Server implements Runnable {
 	}
 
 
+	//Finds the index of the header array containing the requested string
 	private int findHeaderIndex(String headerVal) {
 		for (int i = 0; i < headers.length; i++) {
 			if (headers[i].contains(headerVal))
@@ -417,6 +419,7 @@ public class HTTP1Server implements Runnable {
 		return -1;
 	}
 
+	//Checks the length of the POST response
 	private int checkPostContentLength(String length) {
 		try {
 			return Integer.parseInt(length);
@@ -434,7 +437,6 @@ public class HTTP1Server implements Runnable {
 			DataOutputStream outToClient = new DataOutputStream(csocket.getOutputStream());
 			command = "";
 			requestHeader = "";
-			//int numLines = 0;
 
 			try {
 				//Set server socket timeout
@@ -446,23 +448,12 @@ public class HTTP1Server implements Runnable {
 					requestHeader+=inFromClient.readLine() + '\r' + '\n';
 				}
 
-				System.out.println("Command: " + command);
+				//System.out.println("Command: " + command);
 
 				headers = requestHeader.split("\r\n");
-				//for (int i = 0; i < headers.length; i++) {
-				//	System.out.println("Line #" + i + ": " + headers[i]);
-				//}
-				/*while (numLines != 2) {
-					if (numLines == 0)
-						command = inFromClient.readLine();
-					else if (numLines == 1)
-						modified = inFromClient.readLine();
-					numLines++;
-				}*/
-				//System.out.println("Num Lines: " + numLines);
-				//Parse input from client
+
 				String response = parseClientInput(command);
-				System.out.println("Sending response: " + response);
+				//System.out.println("Sending response: " + response);
 				//Send response code to client
 				byte[] byteResponse = response.getBytes();
 				outToClient.write(byteResponse);
